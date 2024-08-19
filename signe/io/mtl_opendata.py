@@ -19,7 +19,11 @@ def read_mtl_open_data(url: str, encoding: str = 'utf-8') -> gpd.GeoDataFrame:
     _type_
         _description_
     """
-    with urllib.request.urlopen(url) as req:
+    req = urllib.request.Request(
+        url=url,
+        headers={'User-Agent': 'Mozilla/5.0'}
+    )
+    with urllib.request.urlopen(req) as req:
         lines = req.readlines()
     if not encoding:
         encoding = req.headers.get_content_charset()
