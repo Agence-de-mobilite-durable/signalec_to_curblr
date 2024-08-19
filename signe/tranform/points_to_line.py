@@ -68,6 +68,8 @@ def create_segments(points, order, sequence):
         Collection of points
     order: List[float]
         Linear referencing of the point onto a segment
+    sequence: List[int]
+        Chainage of points (1,2 or 3 for start, repeat, end)
 
     Returns
     -------
