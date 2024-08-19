@@ -143,7 +143,7 @@ class Period():
     end_hour: datetime.time
     days: list[int]
     months: list[int]
-    start_day_month: list[int]
+    start_day_month: int
     end_day_month: int
 
     @classmethod
@@ -186,8 +186,14 @@ class Period():
             months = []
         else:
             months = [*map(MONTHS_MAP.get, pan.panneau_mois.split(','))]
-        start_day_month = pan.panneau_an_jour_debut
-        end_day_month = pan.panneau_an_jour_fin
+        if pd.isna(pan.panneau_an_jour_debut):
+            start_day_month = None
+        else:
+            start_day_month = pan.panneau_an_jour_debut
+        if pd.isna(pan.panneau_an_jour_fin):
+            end_day_month = None
+        else:
+            end_day_month = pan.panneau_an_jour_fin
 
         return Period(
             is_except=is_except,
@@ -209,6 +215,17 @@ class Period():
             self.start_day_month == other.start_day_month and
             self.end_day_month == other.end_day_month
         )
+
+    def __hash__(self) -> int:
+        return hash((
+            self.is_except,
+            self.start_hour,
+            self.end_hour,
+            tuple(self.days),
+            tuple(self.months),
+            self.start_day_month,
+            self.end_day_month,
+        ))
 
 
 @dataclass
@@ -252,6 +269,13 @@ class UserClass():
             self.category == other.category and
             self.permit == other.permit
         )
+
+    def __hash__(self) -> int:
+        return hash((
+            self.is_except,
+            tuple(self.category),
+            tuple(self.permit)
+        ))
 
 
 @dataclass
@@ -326,6 +350,9 @@ class Rule():
             self.max_stay == other.max_stay
         )
 
+    def __hash__(self) -> int:
+        return hash((self.activity, self.type, self.prioriy, self.max_stay))
+
 
 @dataclass
 class Regulation():
@@ -375,6 +402,14 @@ class Regulation():
             self.period == other.period
         )
 
+    def __hash__(self) -> int:
+        return hash((
+            self.rule,
+            tuple(self.user_class),
+            tuple(self.period),
+            self._other_text
+        ))
+
     def update(self, other: Regulation) -> None:
         """_summary_
 
@@ -413,6 +448,16 @@ class Location():
     _traffic_dir: int = field(init=False, default=TrafficDir.UNSET)
     _road_geom: LineString = field(init=False, default=None)
     _road_length: float = field(init=False, default=-1)
+
+    def __eq__(self, other):
+        return (
+            self.location == other.location and
+            self.side_of_street == other.side_of_street and
+            self.street_id == other.street_id
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.location, self.side_of_street, self.street_id))
 
     @property
     def linear_reference(self):
@@ -558,12 +603,30 @@ class Panel():
         lr = geometry.project(self.location.location)
         self.location.linear_reference = lr
 
+    def __eq__(self, other):
+        return (
+            self.position == other.position and
+            self.arrow == other.arrow and
+            self.location == other.location and
+            self.regulation == other.regulation
+        )
+
+    def __key(self):
+        return (self.position, self.arrow, self.location, self.regulation)
+
+    def __hash__(self):
+        return hash(self.__key())
+
 
 @dataclass
 class PanCollection():
     """Collection of panels
     """
     pans: dict[int, Panel] = field(default_factory=dict)
+
+    def __post_init__(self):
+        self._merge_pannels_after_inventory()
+        self._drop_duplicates()
 
     def _merge_pannels_after_inventory(self):
         for panel_id, panels in self.pans.items():
@@ -627,6 +690,22 @@ class PanCollection():
             panel.location.traffic_dir = road.SENS_CIR
             panel.location.road_geometry = road.geometry
             panel.location.road_length = road.geometry.length
+
+    def _drop_duplicates(self):
+        panel_hash = []
+        to_rm = []
+        for pan_id, panel in self.pans.items():
+            if hash(panel) in panel_hash:
+                logger.info(
+                    "Panel %s is duplicated. It will be removed",
+                    pan_id
+                )
+                to_rm.append(pan_id)
+            else:
+                panel_hash.append(hash(panel))
+
+        for pan_id in to_rm:
+            self.pans.pop(pan_id)
 
     def _create_lines(self):
         curbs_reg = {}
@@ -725,6 +804,5 @@ class PanCollection():
                     pans_store[pan.globalid_panneau] = [pan_object]
 
         collection = PanCollection(pans_store)
-        collection._merge_pannels_after_inventory()
 
         return collection
