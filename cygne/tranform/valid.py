@@ -5,8 +5,8 @@ from itertools import repeat
 import pandas as pd
 import geopandas as gpd
 
-from signe.tools.geom import MONTREAL_CRS
-from signe.tranform.points_to_line import project
+from cygne.tools.geom import MONTREAL_CRS
+from cygne.tranform.points_to_line import project
 
 
 # FIXME: This only compare 2 by 2 pannel. It does not do a real job at

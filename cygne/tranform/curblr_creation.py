@@ -8,7 +8,7 @@ import pandas as pd
 import geopandas as gpd
 from shapely import wkt
 
-from signe.preprocessing.signalec.pannonceaux_rpa import PANONCEAUX
+from cygne.preprocessing.signalec.pannonceaux_rpa import PANONCEAUX
 
 def load_wkt(wkt_str):
     try:

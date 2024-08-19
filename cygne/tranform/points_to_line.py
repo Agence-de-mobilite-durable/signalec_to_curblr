@@ -9,7 +9,7 @@ from shapely import (
     Point,
     LineString
 )
-from signe.tools.geom import (
+from cygne.tools.geom import (
     MONTREAL_CRS,
     DEFAULT_CRS,
     rtreenearest,

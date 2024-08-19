@@ -1,6 +1,6 @@
 """Init
 """
-from signe.preprocessing.signalec.signalec_preprocessing import (
+from cygne.preprocessing.signalec.signalec_preprocessing import (
     transform_signalec
 )
 

@@ -2,13 +2,13 @@
 """
 import geopandas as gpd
 
-from signe.tranform.points_to_line import (
+from cygne.tranform.points_to_line import (
     buffered_point_to_ligne,
     v_project,
     infer_side_of_street,
     match_points_on_roads
 )
-from signe.tools.geom import MONTREAL_CRS
+from cygne.tools.geom import MONTREAL_CRS
 
 
 def process_fire_hydrants(

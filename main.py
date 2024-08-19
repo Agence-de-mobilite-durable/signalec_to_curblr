@@ -5,8 +5,8 @@ import os
 import sys
 
 
-from signe.tranform.curblr_creation import main as populate_curblr
-from signe.data import (
+from cygne.tranform.curblr_creation import main as populate_curblr
+from cygne.data import (
     load_data,
     SIG_RPA_NAME,
     SIG_STA_NAME,
@@ -15,7 +15,7 @@ from signe.data import (
     GEO_LIMIT_NAME,
     PAID_PARKING_NAME
 )
-from signe.preprocessing import (
+from cygne.preprocessing import (
     process_catalog,
     process_mtl_paid_parking,
     process_signalec,

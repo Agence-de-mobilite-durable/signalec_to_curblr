@@ -3,8 +3,8 @@
 import logging
 
 import geopandas as gpd
-from signe.core.inventory import PanCollection
-from signe.io.mtl_opendata import read_mtl_open_data
+from cygne.core.inventory import PanCollection
+from cygne.io.mtl_opendata import read_mtl_open_data
 
 logger = logging.getLogger(__name__)
 

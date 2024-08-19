@@ -5,7 +5,7 @@ import networkx as nx
 import momepy
 import geopandas as gpd
 
-from signe.tools.geom import DEFAULT_CRS
+from cygne.tools.geom import DEFAULT_CRS
 
 
 ROAD_CLASS_MAPPING = {

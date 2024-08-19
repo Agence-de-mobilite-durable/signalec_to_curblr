@@ -6,14 +6,14 @@ import itertools
 import geopandas as gpd
 import pandas as pd
 
-from signe.tranform.points_to_line import (
+from cygne.tranform.points_to_line import (
     infer_side_of_street,
     v_project,
     compute_chainage,
     point_to_line
 )
-from signe.tools.geom import MONTREAL_CRS
-from signe.tools.graph import (
+from cygne.tools.geom import MONTREAL_CRS
+from cygne.tools.graph import (
     construct_graph,
     get_segment_intersection_name
 )

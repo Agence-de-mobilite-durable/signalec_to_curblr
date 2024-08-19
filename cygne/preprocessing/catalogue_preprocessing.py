@@ -2,7 +2,7 @@
 # coding: utf-8
 
 import pandas as pd
-from signe.preprocessing.signalec.rpa_to_curb import (
+from cygne.preprocessing.signalec.rpa_to_curb import (
     string_to_regulations,
     parking_regex,
     no_parking_regex,

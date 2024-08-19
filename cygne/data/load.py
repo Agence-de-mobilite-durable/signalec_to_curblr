@@ -7,8 +7,8 @@ import geopandas as gpd
 import pandas as pd
 import requests
 
-from signe.data.configs import DFLT_HEADER, SOURCE_FILES
-from signe.io.sqlalchemy_utils import get_engine
+from cygne.data.configs import DFLT_HEADER, SOURCE_FILES
+from cygne.io.sqlalchemy_utils import get_engine
 
 
 def fetch_data(

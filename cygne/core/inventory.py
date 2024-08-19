@@ -16,8 +16,8 @@ from shapely import (
     LineString
 )
 
-from signe.tools.ctime import Ctime
-from signe.tranform.points_to_line import create_segments
+from cygne.tools.ctime import Ctime
+from cygne.tranform.points_to_line import create_segments
 
 
 logger = logging.getLogger(__name__)
