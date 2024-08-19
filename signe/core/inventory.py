@@ -353,7 +353,7 @@ class Regulation():
         other_text = pan.AutreTexte
 
         # handicap special case
-        if pan.RegHandicap:
+        if pan.RegHandicap == 'oui':
             user_class.append(
                 UserClass(
                     is_except=True,
