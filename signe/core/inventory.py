@@ -5,14 +5,22 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import datetime
 from enum import IntEnum
-from itertools import count
+from itertools import count, groupby
+import logging
 from typing import NamedTuple
 
 import pandas as pd
-from shapely import Point
+import geopandas as gpd
+from shapely import (
+    Point,
+    LineString
+)
 
 from signe.tools.ctime import Ctime
+from signe.tranform.points_to_line import create_segments
 
+
+logger = logging.getLogger(__name__)
 
 DAYS = ['lundi', 'mardi', 'mercredi', 'jeudi',
         'vendredi', 'samedi', 'dimanche']
@@ -117,6 +125,15 @@ class SideOfStreet(IntEnum):
     LEFT = -1
 
 
+class TrafficDir(IntEnum):
+    """ Euneration for Arrow
+    """
+    DIGITALIZATION_DIR = 1
+    REVERSE_DIR = -1
+    BOTH_DIR = 0
+    UNSET = -2
+
+
 @dataclass
 class Period():
     """ Table representing the period of a regulation
@@ -140,7 +157,7 @@ class Period():
         data : NamedTuple
             the flat inventory data
         """
-        is_except = pan.RegTmpExcept
+        is_except = pan.RegTmpExcept == 'oui'
         if pan.RegTmpEcole:
             return Period(
                 is_except=is_except,
@@ -213,7 +230,7 @@ class UserClass():
         data : NamedTuple
             the flat inventory data
         """
-        is_except = pan.RegVehExcept
+        is_except = pan.RegVehExcept == 'oui'
         if pd.isna(pan.RegVehType):
             category = []
         else:
@@ -392,6 +409,66 @@ class Location():
     side_of_street: SideOfStreet
     street_id: int
     identifier: int = field(default_factory=count().__next__)
+    _linear_reference: float = field(init=False, default=-1)
+    _traffic_dir: int = field(init=False, default=TrafficDir.UNSET)
+    _road_geom: LineString = field(init=False, default=None)
+    _road_length: float = field(init=False, default=-1)
+
+    @property
+    def linear_reference(self):
+        """Return the Linear reference of this location
+
+        Returns
+        -------
+        float
+        """
+        return self._linear_reference
+
+    @linear_reference.setter
+    def linear_reference(self, lr: float):
+        self._linear_reference = lr
+
+    @property
+    def traffic_dir(self):
+        """ Return the traffic dir on the street of the location
+
+        Returns
+        -------
+        int
+        """
+        return self._traffic_dir
+
+    @traffic_dir.setter
+    def traffic_dir(self, direction: TrafficDir):
+        self._traffic_dir = direction
+
+    @property
+    def road_geometry(self):
+        """ Return the road geometry of the street of the location
+
+        Returns
+        -------
+        int
+        """
+        return self._road_geom
+
+    @road_geometry.setter
+    def road_geometry(self, geometry: LineString):
+        self._road_geom = geometry
+
+    @property
+    def road_length(self):
+        """ Return the traffic dir on the street of the location
+
+        Returns
+        -------
+        int
+        """
+        return self._road_length
+
+    @road_length.setter
+    def road_length(self, length: float):
+        self._road_length = length
 
 
 @dataclass
@@ -402,6 +479,7 @@ class Panel():
     arrow: Arrow
     regulation: Regulation
     location: Location
+    unique_id: str
     _meta: dict[str, object] = field(default_factory=dict)
 
     @classmethod
@@ -415,6 +493,7 @@ class Panel():
         data : NamedTuple
             the flat inventory data
         """
+        unique_id = pan.globalid_panneau
         position = pan.ObjetPositionSeq
         arrow = Arrow.NO_ARROW
         if pan.RegFleche == 'vers rue':
@@ -431,7 +510,7 @@ class Panel():
         location = Location(
             location=pan.geometry,
             side_of_street=side_of_street,
-            street_id=pan.id_voie
+            street_id=pan.IdTroncon
         )
 
         _meta = {
@@ -439,6 +518,7 @@ class Panel():
         }
 
         return Panel(
+            unique_id=unique_id,
             position=position,
             arrow=arrow,
             regulation=regulation,
@@ -466,6 +546,18 @@ class Panel():
         """
         self.regulation.update(other.regulation)
 
+    def linear_reference_from_geom(self, geometry: LineString):
+        """ Create the linear reference of the panel on a
+        geometry
+
+        Parameters
+        ----------
+        geometry : LineString
+            Road to compute the linear reference on.
+        """
+        lr = geometry.project(self.location.location)
+        self.location.linear_reference = lr
+
 
 @dataclass
 class PanCollection():
@@ -481,10 +573,112 @@ class PanCollection():
 
             self.pans[panel_id] = panel
 
-    def sort_pannels_by_street_and_side(self):
-        """ TODO
+    def group_pannels_by_street_and_side(self):
+        """ Group panels by street, side_of_street
         """
-        pass
+        curbs = {}
+        for _, panel in self.pans.items():
+            road_id = panel.location.street_id
+            side_of_street = panel.location.side_of_street
+            try:
+                curbs[(road_id, side_of_street)].append(panel)
+            except KeyError:
+                curbs[(road_id, side_of_street)] = [panel]
+
+        for id_curb, panels in curbs.items():
+            curbs[id_curb] = sorted(
+                panels,
+                key=lambda x: x.location.linear_reference
+            )
+
+        return curbs
+
+    def enrich_with_roadnetwork(self, roads: gpd.GeoDataFrame):
+        """_summary_
+
+        Parameters
+        ----------
+        roads : gpd.GeoDataFrame
+            _description_
+
+        Returns
+        -------
+        _type_
+            _description_
+        """
+        roads.copy()
+        roads = roads.set_index("ID_TRC")
+        for id_pan, panel in self.pans.items():
+            try:
+                road = roads.loc[panel.location.street_id]
+            except KeyError:
+                logger.info(
+                    "Wrong road id for panel %s, roads id does not exits : %s",
+                    id_pan,
+                    panel.location.street_id
+                )
+                road = roads.iloc[
+                    roads.sindex.nearest(
+                        panel.location.location,
+                        return_all=False)[1][0]
+                ]
+                logger.info('Infered road id %s', road.name)
+            panel.linear_reference_from_geom(road.geometry)
+            panel.location.traffic_dir = road.SENS_CIR
+            panel.location.road_geometry = road.geometry
+            panel.location.road_length = road.geometry.length
+
+    def _create_lines(self):
+        curbs_reg = {}
+        curbs = self.group_pannels_by_street_and_side()
+
+        # for all panel on roads
+        for road_id, panels in curbs.items():
+            traffic_dir = panels[0].location.traffic_dir
+            # for each regulation
+            for regulation, panels_g in groupby(
+                sorted(
+                    panels,
+                    key=lambda x: repr(x.regulation)
+                ), lambda x: repr(x.regulation)
+            ):
+
+                # sort by linear_ref
+                panels_g = sorted(
+                    panels_g,
+                    key=lambda x: x.location.linear_reference
+                )
+
+                points = [p.location.location for p in panels_g]
+                linear_ref = [p.location.linear_reference for p in panels_g]
+                chain = [p.arrow for p in panels_g]
+
+                # handle reversed traffic direction from road digitalization
+                if (
+                    traffic_dir == TrafficDir.REVERSE_DIR or
+                    (traffic_dir == TrafficDir.BOTH_DIR and
+                     road_id[1] == SideOfStreet.LEFT)
+                ):
+                    points = list(reversed(points))
+                    linear_ref = list(reversed(linear_ref))
+                    chain = list(reversed(chain))
+
+                    linear_ref = [panels[0].location.road_length - lr
+                                  for lr in linear_ref]
+
+                segments = create_segments(points, linear_ref, chain)
+                try:
+                    curbs_reg[road_id].append([
+                        regulation,
+                        segments
+                    ])
+                except KeyError:
+                    curbs_reg[road_id] = [[
+                        regulation,
+                        segments
+                    ]]
+
+        return curbs_reg
 
     @classmethod
     def from_inventory(cls, data: pd.DataFrame):
