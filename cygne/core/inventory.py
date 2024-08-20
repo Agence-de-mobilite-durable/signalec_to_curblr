@@ -244,14 +244,18 @@ class Period():
         if self.is_except:
             return {
                 "effectiveDates": [{
-                        "from": f"{self.end_day_month}-{self.months[-1] + 1}",
-                        "to": f"{self.start_day_month}-{self.months[0] + 1}"
+                        "from": f"{self.end_day_month:%02d}-" +
+                                f"{(self.months[-1] + 1):%02d}",
+                        "to": f"{self.start_day_month:%02d}-" +
+                              f"{self.months[0] + 1:%02d}"
                     }]
             }
         return {
             "effectiveDates": [{
-                "from": f"{self.start_day_month}-{self.months[0] + 1}",
-                "to": f"{self.end_day_month}-{self.months[-1] + 1}"
+                "from": f"{self.start_day_month:%02d}-" +
+                        f"{self.months[0] + 1:%02d}",
+                "to": f"{self.end_day_month:%02d}" +
+                      f"-{self.months[-1] + 1:%02d}"
             }]
         }
 
@@ -614,6 +618,8 @@ class Regulation():
             raise RuntimeWarning('Trying to merge two of the same regulation.')
 
         if self.period != other.period:
+            # FIXME: this is not the right thing to do for little pan. It
+            # should precise each period already computed.
             self.period.extend(other.period)
 
         if self.user_class != other.user_class:
@@ -822,6 +828,8 @@ class Panel():
         other : Panel
             _description_
         """
+        # FIXME: This should implement another method to esquive confict
+        # with little pan update
         self.regulation.update(other.regulation)
 
     def linear_reference_from_geom(self, geometry: LineString):
