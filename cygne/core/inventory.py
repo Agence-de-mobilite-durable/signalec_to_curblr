@@ -1033,7 +1033,7 @@ class PanCollection():
 
         curblr["manifest"] = MANIFEST
         curblr["type"] = "FeatureCollection"
-        curblr['crs'] = MONTREAL_CRS
+        curblr['crs'] = literal_eval(MONTREAL_CRS.to_json())
         curblr["features"] = features
 
         i = 0
