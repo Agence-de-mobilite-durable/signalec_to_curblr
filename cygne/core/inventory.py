@@ -22,12 +22,12 @@ from shapely import (
 from cygne.core.curblr import (
     MANIFEST,
     DAYS as CDAYS,
+    CRS
 )
 from cygne.tools.ctime import Ctime
 from cygne.tranform.points_to_line import (
     create_segments,
-    cut_linestring,
-    MONTREAL_CRS
+    cut_linestring
 )
 
 
@@ -786,7 +786,7 @@ class Panel():
         location = Location(
             location=pan.geometry,
             side_of_street=side_of_street,
-            street_id=pan.IdTroncon,
+            street_id=-1 if pd.isna(pan.IdTroncon) else int(pan.IdTroncon),
             asset_type=cls.__class__.__name__
         )
 
@@ -923,6 +923,7 @@ class PanCollection():
                 ]
                 logger.info('Infered road id %s', road.name)
             panel.linear_reference_from_geom(road.geometry)
+            panel.location.street_id = int(road.name)
             panel.location.traffic_dir = road.SENS_CIR
             panel.location.road_geometry = road.geometry
             panel.location.road_length = road.geometry.length
@@ -1033,7 +1034,7 @@ class PanCollection():
 
         curblr["manifest"] = MANIFEST
         curblr["type"] = "FeatureCollection"
-        curblr['crs'] = literal_eval(MONTREAL_CRS.to_json())
+        curblr['crs'] = CRS
         curblr["features"] = features
 
         i = 0
