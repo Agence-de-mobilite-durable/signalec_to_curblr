@@ -363,6 +363,7 @@ class UserClass():
             permit = []
         else:
             permit = pan.RegVehSRRR.split(',')
+            is_except = pan.RegNature == 'interdiction'
 
         return UserClass(
             is_except=is_except,
