@@ -2,10 +2,12 @@
 """
 from __future__ import annotations
 
+from ast import literal_eval
 from dataclasses import dataclass, field
 import datetime
 from enum import IntEnum
-from itertools import count, groupby
+import inspect
+from itertools import groupby
 import logging
 from typing import NamedTuple
 
@@ -13,14 +15,24 @@ import pandas as pd
 import geopandas as gpd
 from shapely import (
     Point,
-    LineString
+    LineString,
+    to_geojson
 )
 
+from cygne.core.curblr import (
+    MANIFEST,
+    DAYS as CDAYS,
+)
 from cygne.tools.ctime import Ctime
-from cygne.tranform.points_to_line import create_segments
+from cygne.tranform.points_to_line import (
+    create_segments,
+    cut_linestring,
+    MONTREAL_CRS
+)
 
 
 logger = logging.getLogger(__name__)
+
 
 DAYS = ['lundi', 'mardi', 'mercredi', 'jeudi',
         'vendredi', 'samedi', 'dimanche']
@@ -205,6 +217,101 @@ class Period():
             end_day_month=end_day_month
         )
 
+    @property
+    def is_empty(self) -> bool:
+        """Is empty ?
+
+        Returns
+        -------
+        bool
+        """
+        return not (
+            self.start_hour or
+            self.end_hour or
+            self.days or
+            self.months or
+            self.start_day_month or
+            self.end_day_month
+        )
+
+    def _effective_dates(self):
+        if (
+            self.end_day_month is None or
+            self.start_day_month is None or
+            self.months is None
+        ):
+            return {}
+        if self.is_except:
+            return {
+                "effectiveDates": [{
+                        "from": f"{self.end_day_month}-{self.months[-1] + 1}",
+                        "to": f"{self.start_day_month}-{self.months[0] + 1}"
+                    }]
+            }
+        return {
+            "effectiveDates": [{
+                "from": f"{self.start_day_month}-{self.months[0] + 1}",
+                "to": f"{self.end_day_month}-{self.months[-1] + 1}"
+            }]
+        }
+
+    def _days_of_week(self):
+        if self.days is None:
+            return {}
+        if self.is_except:
+            return {
+                "daysOfWeek": {
+                    "days": [d for d in CDAYS if d not in
+                             [CDAYS[i] for i in self.days]]
+                }
+            }
+        return {
+            "daysOfWeek": {
+                "days": [CDAYS[i] for i in self.days]
+            }
+        }
+
+    def _times_of_day(self):
+        if self.start_hour is None or self.end_hour is None:
+            return {}
+        if self.is_except:
+            return {
+                "timesOfDay": [
+                    {
+                        "from": '00:00',
+                        "to": self.start_hour.strftime('%H:%M')
+                    },
+                    {
+                        "from": self.end_hour.strftime('%H:%M'),
+                        "to": '23:59'
+                    }
+                ]
+            }
+        return {
+            "timesOfDay": [{
+                "from": self.start_hour.strftime('%H:%M'),
+                "to": self.end_hour.strftime('%H:%M')
+            }]
+        }
+
+    def to_curblr(self) -> dict:
+        """ Convert Period to CurbLR dict
+
+        Returns
+        -------
+        dict
+            Curblr
+        """
+        if self.is_empty:
+            return {}
+
+        curb = {}
+        curb.update(self._effective_dates())
+        curb.update(self._days_of_week())
+        curb.update(self._times_of_day())
+
+        return curb
+
     def __eq__(self, other: Period) -> bool:
         return (
             self.is_except == other.is_except and
@@ -263,6 +370,28 @@ class UserClass():
             permit=permit
         )
 
+    def is_empty(self) -> bool:
+        """Is empty ?
+
+        Returns
+        -------
+        bool
+        """
+        return not (
+            self.category or self.permit
+        )
+
+    def to_curblr(self) -> dict:
+        """ Export UserClass as CurbLR
+        """
+        if self.is_empty():
+            return {}
+
+        return {
+            "classes": self.category,
+            "subclasses": self.permit
+        }
+
     def __eq__(self, other: UserClass):
         return (
             self.is_except == other.is_except and
@@ -284,8 +413,12 @@ class Rule():
     """
     activity: Nature
     type: str
-    prioriy: int
+    reason: str
+    # This is the position of the panel on the support. It's not clear what
+    # to do with this information. Maybe we'll remove it further down the line.
+    priority: int
     max_stay: int
+    _authority: dict = field(default_factory=dict)
 
     @classmethod
     def from_inventory(cls, pan: NamedTuple):
@@ -303,8 +436,15 @@ class Rule():
             activity = Nature.PERMISSION
         if pd.isna(pan.RegNature):
             activity = -1
+        reason = None
+        if not pd.isna(pan.panneau_type):
+            reason = pan.panneau_type
 
         type_ = pan.RegTypeImmo if not pd.isna(pan.RegTypeImmo) else None
+        if type_ is None or type_ == 'stationnement':
+            type_ = 'parking'
+        if type_ == 'arrêt':
+            type_ = 'standing'
 
         priority = (
             pan.ObjetPositionSeq if not
@@ -313,11 +453,17 @@ class Rule():
         )
         max_stay = pan.RegTmpDuree if not pd.isna(pan.RegTmpDuree) else None
 
+        authority = {
+            'name': pan.arrondissement
+        }
+
         return Rule(
             activity=activity,
             type=type_,
-            prioriy=priority,
-            max_stay=max_stay
+            reason=reason,
+            priority=priority,
+            max_stay=max_stay,
+            _authority=authority
         )
 
     def is_empty(self):
@@ -331,9 +477,38 @@ class Rule():
         return (
             self.activity == -1 and
             not self.type and
-            not self.prioriy and
+            not self.reason and
+            not self.priority and
             not self.max_stay
         )
+
+    def to_curblr(self, reverse=False) -> dict[str, str]:
+        """ Rule to CurbLR
+
+        Returns
+        -------
+        dict[str, str]
+            CurbLR of the rule
+        """
+        if not reverse:
+            activity = "no " if not self.activity else ""
+        else:
+            activity = "no " if self.activity else ""
+        activity += self.type
+        priority_category = self.reason if self.reason else activity
+
+        curblr = {
+            "activity": activity,
+            "priorityCategory": priority_category,
+        }
+
+        if self.max_stay:
+            curblr["maxStay"] = self.max_stay
+
+        if self._authority:
+            curblr["authority"] = self._authority
+
+        return curblr
 
     def __eq__(self, other: Rule) -> bool:
         if self.is_empty or other.is_empty:
@@ -346,12 +521,13 @@ class Rule():
                 self.activity == -1
             ) and
             self.type == other.type and
-            self.prioriy == other.priority and
+            self.reason == other.reason and
+            self.priority == other.priority and
             self.max_stay == other.max_stay
         )
 
     def __hash__(self) -> int:
-        return hash((self.activity, self.type, self.prioriy, self.max_stay))
+        return hash((self.activity, self.type, self.priority, self.max_stay))
 
 
 @dataclass
@@ -386,6 +562,13 @@ class Regulation():
                     is_except=True,
                     category=['handicap']
                 )
+            )
+
+        # all userclass should be the same except value
+        except_uc = [uc.is_except for uc in user_class]
+        if sum(except_uc) > 0 and sum(except_uc) < len(except_uc):
+            raise ValueError(
+                'All userclass should either be expect=True or except=False'
             )
 
         return Regulation(
@@ -435,6 +618,36 @@ class Regulation():
         if self.user_class != other.user_class:
             self.user_class.extend(other.user_class)
 
+    def to_curblr(self) -> dict:
+        """ Create a CurbLR representation of the Regulation
+
+        Return
+        ------
+        dict
+            CurbLR representation of the regulation
+        """
+
+        curblr = {}
+        user_class_exception = any(uc.is_except for uc in self.user_class)
+        curblr['rule'] = self.rule.to_curblr(reverse=user_class_exception)
+        curblr['userClasses'] = [uc.to_curblr() for uc in self.user_class]
+        if not curblr['userClasses']:
+            curblr.pop('userClasses')
+        curblr['timeSpans'] = [p.to_curblr() for p in self.period]
+
+        return curblr
+
+
+def get_class_name():
+    """Get previous class caller name"""
+    prev_frame = inspect.currentframe().f_back
+    try:
+        class_name = prev_frame.f_locals['self'].__class__.__name__
+    except KeyError:
+        class_name = None
+
+    return class_name
+
 
 @dataclass
 class Location():
@@ -443,7 +656,7 @@ class Location():
     location: Point
     side_of_street: SideOfStreet
     street_id: int
-    identifier: int = field(default_factory=count().__next__)
+    asset_type: str = None
     _linear_reference: float = field(init=False, default=-1)
     _traffic_dir: int = field(init=False, default=TrafficDir.UNSET)
     _road_geom: LineString = field(init=False, default=None)
@@ -458,6 +671,23 @@ class Location():
 
     def __hash__(self) -> int:
         return hash((self.location, self.side_of_street, self.street_id))
+
+    def to_curblr(self) -> dict[str, object]:
+        """Convert Location to CurbLR
+
+        Returns
+        -------
+        dict[str, object]
+        """
+        return {
+            "shstRefId": self.street_id,
+            "shstLocationStart": -1,
+            "shstLocationEnd": -1,
+            "sideOfStreet": self.side_of_street.name.lower(),
+            "objectId": -1,
+            "derivedFrom": [],
+            "assetType": self.asset_type
+        }
 
     @property
     def linear_reference(self):
@@ -520,6 +750,7 @@ class Location():
 class Panel():
     """ Caracteristic of a parking panel
     """
+    __name__ = 'sign'
     position: int
     arrow: Arrow
     regulation: Regulation
@@ -555,7 +786,8 @@ class Panel():
         location = Location(
             location=pan.geometry,
             side_of_street=side_of_street,
-            street_id=pan.IdTroncon
+            street_id=pan.IdTroncon,
+            asset_type=cls.__class__.__name__
         )
 
         _meta = {
@@ -616,6 +848,10 @@ class Panel():
 
     def __hash__(self):
         return hash(self.__key())
+
+
+Segment = dict[tuple[int, int],
+               list[tuple[Regulation, list[tuple[float, float]], str]]]
 
 
 @dataclass
@@ -707,7 +943,7 @@ class PanCollection():
         for pan_id in to_rm:
             self.pans.pop(pan_id)
 
-    def _create_lines(self):
+    def _create_segment(self) -> Segment:
         curbs_reg = {}
         curbs = self.group_pannels_by_street_and_side()
 
@@ -719,7 +955,7 @@ class PanCollection():
                 sorted(
                     panels,
                     key=lambda x: repr(x.regulation)
-                ), lambda x: repr(x.regulation)
+                ), lambda x: x.regulation
             ):
 
                 # sort by linear_ref
@@ -731,6 +967,7 @@ class PanCollection():
                 points = [p.location.location for p in panels_g]
                 linear_ref = [p.location.linear_reference for p in panels_g]
                 chain = [p.arrow for p in panels_g]
+                panel_id = [p.unique_id for p in panels_g]
 
                 # handle reversed traffic direction from road digitalization
                 if (
@@ -749,15 +986,129 @@ class PanCollection():
                 try:
                     curbs_reg[road_id].append([
                         regulation,
-                        segments
+                        segments,
+                        panel_id
                     ])
                 except KeyError:
                     curbs_reg[road_id] = [[
                         regulation,
-                        segments
+                        segments,
+                        panel_id
                     ]]
 
         return curbs_reg
+
+    def _create_lines_geom(self):
+        segments = self._create_segment()
+
+        for _, segments_break in segments.items():
+            for arr in segments_break:
+                breaks = arr[1]
+                panels_id = arr[2]
+
+                road_geom = self.pans[panels_id[0]].location.road_geometry
+                traffic_dir = self.pans[panels_id[0]].location.traffic_dir
+                side = self.pans[panels_id[0]].location.side_of_street
+
+                if (
+                    traffic_dir == TrafficDir.REVERSE_DIR or
+                    (traffic_dir == TrafficDir.BOTH_DIR and
+                     side == SideOfStreet.LEFT)
+                ):
+                    breaks = [[road_geom.length - x, road_geom.length - y]
+                              for x, y in breaks]
+
+                lines_geom = [cut_linestring(road_geom, x, y)
+                              for x, y in breaks]
+                arr.append(lines_geom)
+
+        return segments
+
+    def to_curblr(self):
+        """ Convert the collection of signs to CurbLR
+        """
+        segments = self._create_lines_geom()
+        curblr = {}
+        features = []
+
+        curblr["manifest"] = MANIFEST
+        curblr["type"] = "FeatureCollection"
+        curblr['crs'] = MONTREAL_CRS
+        curblr["features"] = features
+
+        i = 0
+        for segments_break in segments.values():
+            for (reg, lr_breaks, panels_id, lines) in segments_break:
+                regulation = reg.to_curblr()
+
+                # usefull var on the street treated
+                tf_dir = self.pans[panels_id[0]].location.traffic_dir
+                side = self.pans[panels_id[0]].location.side_of_street
+                road_length = self.pans[panels_id[0]].location.road_length
+
+                for lr_break, line in zip(lr_breaks, lines):
+                    pan_id = [
+                        self.pans[p].unique_id
+                        for p in panels_id
+                        if (
+                            lr_break[0] <=
+                            self.pans[p].location.linear_reference <=
+                            lr_break[-1]
+                        )
+                    ]
+                    if (
+                        tf_dir == TrafficDir.REVERSE_DIR or
+                        (tf_dir == TrafficDir.BOTH_DIR and
+                         side == SideOfStreet.LEFT)
+                    ):
+                        pan_id = [
+                            self.pans[p].unique_id
+                            for p in panels_id
+                            if (
+                                lr_break[0] <=
+                                (road_length -
+                                 self.pans[p].location.linear_reference) <=
+                                lr_break[-1]
+                            )
+                        ]
+
+                    # there is something weird
+                    if not line:
+                        logger.info(
+                            "This sign %s make a regulation of 0 meters." +
+                            " There must be an error. This regulation will" +
+                            " not be incorporated into the CurbLR data.",
+                            pan_id
+                        )
+                        continue
+
+                    geometry = to_geojson(line)
+                    location = self.pans[panels_id[0]].location.to_curblr()
+                    location["objectId"] = i
+                    location["shstLocationStart"] = lr_break[0]
+                    location["shstLocationEnd"] = lr_break[-1]
+                    if str(lr_break[-1]) == 'inf':
+                        location["shstLocationEnd"] = line.length
+
+                    location["derivedFrom"] = pan_id
+
+                    this_feat = {
+                        "type": "Feature",
+                        "properties": {
+                            "location": location,
+                            "regulations": regulation,
+                        },
+                        "geometry": literal_eval(geometry)
+                    }
+                    features.append(this_feat)
+
+                    i += 1
+
+        return curblr
+
+    def test_start(self):
+        """TODO
+        """
 
     @classmethod
     def from_inventory(cls, data: pd.DataFrame):

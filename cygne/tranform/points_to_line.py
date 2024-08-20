@@ -88,10 +88,10 @@ def create_segments(points, order, sequence):
     if elements.shape[0] == 1:
         if elements[0][2] == 2:  # 2
             return [(0, np.inf)]
-        elif elements[0][2] == 1:  # 1
+        if elements[0][2] == 1:  # 1
             return [(elements[0][1], np.inf)]
-        else:  # 3
-            return [(0, elements[0][1])]
+        # 3
+        return [(0, elements[0][1])]
 
     lines = []
     curr_line = None

@@ -1,5 +1,6 @@
 """ Process inventory data
 """
+import json
 import logging
 
 import geopandas as gpd
@@ -56,10 +57,12 @@ def main():
     logger.info("Enrich panels location with geobase info")
     panc.enrich_with_roadnetwork(geobase)
     logger.info("Group panels with street and side")
-    curbs = panc.group_pannels_by_street_and_side()
-    segs = panc._create_lines()
-    logger.info([p.location.linear_reference for p in curbs[1240182, 1]])
-    logger.info('finish ?')
+
+    curlr = panc.to_curblr()
+    with open('./test_inventaire.curblr.geojson', 'w', encoding='utf-8') as f:
+        json.dump(curlr, f, indent=4)
+
+    logger.info('Done')
 
 
 if __name__ == '__main__':
