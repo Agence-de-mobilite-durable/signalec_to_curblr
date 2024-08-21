@@ -201,11 +201,11 @@ class Period():
         if pd.isna(pan.panneau_an_jour_debut):
             start_day_month = None
         else:
-            start_day_month = pan.panneau_an_jour_debut
+            start_day_month = int(pan.panneau_an_jour_debut)
         if pd.isna(pan.panneau_an_jour_fin):
             end_day_month = None
         else:
-            end_day_month = pan.panneau_an_jour_fin
+            end_day_month = int(pan.panneau_an_jour_fin)
 
         return Period(
             is_except=is_except,
