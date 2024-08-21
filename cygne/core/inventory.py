@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from ast import literal_eval
-from dataclasses import dataclass, field
+from dataclasses import (
+    dataclass,
+    field,
+    asdict,
+    replace
+)
 import datetime
 from enum import IntEnum
 import inspect
@@ -337,6 +342,41 @@ class Period():
             self.start_day_month,
             self.end_day_month,
         ))
+
+    def to_dict(self):
+        """ To dict
+        """
+        return asdict(self)
+
+    def update(self, other: Period) -> Period:
+        """Update a period with information of another period. Information
+        should not overlap.
+
+        Parameters
+        ----------
+        other : Period
+            Update with
+
+        Returns
+        -------
+        Period
+            Updated period
+        """
+        if self.is_empty:
+            replace(self, **other.to_dict())
+
+        other_dict = asdict(other)
+        self_dict = asdict(self)
+        for k, v in self_dict:
+            # both value are not null
+            if v and other_dict[k]:
+                raise ValueError(
+                    f'Information between period overlap on key: {k}'
+                )
+            if not v:
+                replace(self, **{k: v})
+
+        return self
 
 
 @dataclass
