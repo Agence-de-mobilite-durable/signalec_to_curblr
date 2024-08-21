@@ -244,18 +244,18 @@ class Period():
         if self.is_except:
             return {
                 "effectiveDates": [{
-                        "from": f"{self.end_day_month:%02d}-" +
-                                f"{(self.months[-1] + 1):%02d}",
-                        "to": f"{self.start_day_month:%02d}-" +
-                              f"{self.months[0] + 1:%02d}"
+                        "from": f"{(self.months[-1] + 1):02d}-" +
+                                f"{self.end_day_month:02d}",
+                        "to": f"{self.months[0] + 1:02d}-" +
+                              f"{self.start_day_month:02d}"
                     }]
             }
         return {
             "effectiveDates": [{
-                "from": f"{self.start_day_month:%02d}-" +
-                        f"{self.months[0] + 1:%02d}",
-                "to": f"{self.end_day_month:%02d}" +
-                      f"-{self.months[-1] + 1:%02d}"
+                "from": f"{self.months[0] + 1:02d}-" +
+                        f"{self.start_day_month:02d}",
+                "to": f"{self.months[-1] + 1:02d}" +
+                      f"-{self.end_day_month:02d}"
             }]
         }
 
