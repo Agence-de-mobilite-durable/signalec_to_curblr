@@ -2,7 +2,6 @@
 """
 import datetime
 
-
 MANIFEST = {
     "createdDate": "2024-08-20T13:54:24-04:00",
     "lastUpdatedDate": (
@@ -27,3 +26,4 @@ MANIFEST = {
 DAYS = ['mo', 'tu', 'we', 'th', 'fr', 'sa', 'su']
 
 CRS = {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::32188"}}
+

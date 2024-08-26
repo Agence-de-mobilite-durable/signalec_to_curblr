@@ -4,7 +4,7 @@ import json
 import logging
 
 import geopandas as gpd
-from cygne.core.inventory import PanCollection
+from cygne.core.inventory import Inventory
 from cygne.io.mtl_opendata import read_mtl_open_data
 
 logger = logging.getLogger(__name__)
@@ -52,8 +52,12 @@ def main():
         how='left'
     )
 
+    # FIX SRRR
+    df.loc[~df.RegVehSRRR.isna() &
+           (df.RegVehSRRR != ''), 'RegVehExcept'] = 'oui'
+
     logger.info("Create panels collection")
-    panc = PanCollection.from_inventory(df)
+    panc = Inventory.from_inventory(df)
     logger.info("Enrich panels location with geobase info")
     panc.enrich_with_roadnetwork(geobase)
     logger.info("Group panels with street and side")
