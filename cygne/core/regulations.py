@@ -16,6 +16,7 @@ from cygne.core import (
     UserClass,
     Period
 )
+from cygne.core.periods import period2curblr
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +105,6 @@ class Regulation():
             raise RuntimeWarning('Trying to merge two of the same regulation.')
 
         if self.periods != other.periods:
-            # FIXME: this is not the right thing to do for little pan. It
             # should precise each period already computed.
             self.periods.extend(other.periods)
 
@@ -162,10 +162,10 @@ class Regulation():
         curblr = {}
         # user_class_exception = any(uc.is_except for uc in self.user_class)
         curblr['rule'] = self.rule.to_curblr()  # reverse=user_class_exception)
-        curblr['userClasses'] = [uc.to_curblr() for uc in self.user_class]
-        if not curblr['userClasses']:
-            curblr.pop('userClasses')
-        curblr['timeSpans'] = [p.to_curblr() for p in self.periods]
+        if not all(uc.empty for uc in self.user_class):
+            curblr['userClasses'] = [uc.to_curblr() for uc in self.user_class]
+        if not all(p.empty for p in self.periods):
+            curblr['timeSpans'] = period2curblr(self.periods)
 
         return curblr
 
@@ -179,4 +179,3 @@ def get_class_name():
         class_name = None
 
     return class_name
-

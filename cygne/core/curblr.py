@@ -26,4 +26,3 @@ MANIFEST = {
 DAYS = ['mo', 'tu', 'we', 'th', 'fr', 'sa', 'su']
 
 CRS = {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::32188"}}
-

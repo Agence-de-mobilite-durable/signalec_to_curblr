@@ -6,6 +6,7 @@ from dataclasses import (
     dataclass,
     field
 )
+import copy
 from itertools import groupby
 from typing import NamedTuple
 
@@ -94,11 +95,13 @@ class Panel():
                     regulation.periods = reg.periods
                     continue
                 # else merge every period with little pan periods
+                new_p = []
                 for period in regulation.periods:
                     for additional_period in reg.periods:
-                        new_p = []
-                        new_p.extend(period.update(additional_period))
-                        regulation.periods = new_p
+                        period_c = copy.deepcopy(period)
+                        new_p.extend(period_c.update(additional_period))
+                new_p = list(set(new_p))
+                regulation.periods = new_p
 
     def extend_userclass(self, reg: Regulation) -> None:
         """_summary_

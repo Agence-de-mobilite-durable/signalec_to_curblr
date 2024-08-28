@@ -44,15 +44,16 @@ class Rule():
             activity = Nature.PERMISSION
         if pd.isna(pan.RegNature):
             activity = -1
-        reason = None
-        if not pd.isna(pan.panneau_type):
-            reason = pan.panneau_type
 
         type_ = pan.RegTypeImmo if not pd.isna(pan.RegTypeImmo) else None
         if type_ is None or type_ == 'stationnement':
             type_ = 'parking'
         if type_ == 'arrêt':
             type_ = 'standing'
+
+        reason = type_
+        if not pd.isna(pan.panneau_type):
+            reason = pan.panneau_type
 
         priority = (
             pan.ObjetPositionSeq if not

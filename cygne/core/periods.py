@@ -6,9 +6,10 @@ from dataclasses import (
     asdict
 )
 import datetime
-from itertools import repeat
+from itertools import repeat, groupby
 import logging
 from typing import NamedTuple
+from warnings import warn
 
 import pandas as pd
 
@@ -35,16 +36,16 @@ MONTHS_MAP = {
 
 SCHOOL_PERIOD_1 = {
     'days': [0, 1, 2, 3, 4],
-    'start_hour': datetime.time(7, 0),
-    'end_hour': datetime.time(17, 0),
+    'start_hour': None,
+    'end_hour': None,
     'start_date': datetime.date(1970, 1, 1),
     'end_date': datetime.date(1970, 6, 30),
 }
 
 SCHOOL_PERIOD_2 = {
     'days': [0, 1, 2, 3, 4],
-    'start_hour': datetime.time(7, 0),
-    'end_hour': datetime.time(17, 0),
+    'start_hour': None,
+    'end_hour': None,
     'start_date': datetime.date(1970, 9, 1),
     'end_date': datetime.date(1970, 12, 31),
     }
@@ -155,6 +156,154 @@ def reverse_period(
     return periods
 
 
+def check_hours(
+    hour_deb: str,
+    hour_fin: str
+) -> tuple[datetime.time, datetime.time]:
+    """_summary_
+
+    Parameters
+    ----------
+    hour_deb : str
+        _description_
+    hour_fin : str
+        _description_
+
+    Returns
+    -------
+    tuple[datetime.time, datetime.time]
+        _description_
+
+    Raises
+    ------
+    ValueError
+        _description_
+    """
+    if (
+        pd.isna(hour_deb) or
+        not hour_deb
+    ):
+        start_hour = None
+    else:
+        start_hour = Ctime.from_string(
+            time=hour_deb,
+            hour_format="HH:MM:SS"
+        ).as_datetime()
+    if (
+        pd.isna(hour_fin) or
+        not hour_fin
+    ):
+        end_hour = None
+    else:
+        end_hour = Ctime.from_string(
+            time=hour_fin,
+            hour_format="HH:MM:SS"
+        ).as_datetime()
+
+    if (
+        (start_hour and not end_hour) or
+        (not start_hour and end_hour)
+    ):
+        raise ValueError('Both start and end hour should be set')
+
+    if (
+        start_hour == datetime.time(0, 0) and
+        end_hour == datetime.time(0, 0)
+    ):
+        raise ValueError('Start hour and end hour cannot be set to 00:00')
+
+    return start_hour, end_hour
+
+
+def check_days(months: str) -> list[int]:
+    """_summary_
+
+    Parameters
+    ----------
+    months : str
+        _description_
+
+    Returns
+    -------
+    list[int]
+        _description_
+    """
+    if (
+        pd.isna(months) or
+        not months
+    ):
+        days = []
+    else:
+        days = parse_days(months.replace(',', '-'))
+
+    return days
+
+
+def check_dates(
+    months: str,
+    start_day: int,
+    end_day: int
+) -> tuple[list[datetime.date], list[datetime.date]]:
+    """_summary_
+
+    Parameters
+    ----------
+    months : _type_
+        _description_
+    list : _type_
+        _description_
+
+    Raises
+    ------
+    ValueError
+        _description_
+    ValueError
+        _description_
+    """
+    if (
+        pd.isna(months) or
+        not months
+    ):
+        months = []
+    else:
+        months = [*map(MONTHS_MAP.get, months.split(','))]
+    if (
+        pd.isna(start_day) or
+        not start_day
+    ):
+        start_day_month = None
+    else:
+        start_day_month = int(start_day)
+
+    if (
+        pd.isna(end_day) or
+        not end_day
+    ):
+        end_day_month = None
+    else:
+        end_day_month = int(end_day)
+
+    if months and not (start_day_month or end_day_month):
+        raise ValueError('Months refered without start/end.')
+    if (start_day_month or end_day_month) and not months:
+        raise ValueError('Start/End days refered without start/end.')
+
+    months = sorted(months)
+    dates_from, dates_to = from_inventory_to_list_date(
+            start_day_month,
+            end_day_month,
+            months
+        )
+    if not dates_from:
+        dates_from = [None]
+        dates_to = [None]
+
+    if len(dates_from) != len(dates_to):
+        raise ValueError('There should be the same amount of start/end dates')
+
+    return dates_from, dates_to
+
+
 @dataclass
 class Period():
     """ Table representing the period of a regulation
@@ -179,69 +328,35 @@ class Period():
         periods = []
         is_except = pan.RegTmpExcept == 'oui'
 
-        if (
-            pd.isna(pan.RegTmpHeureDebut) or
-            not pan.RegTmpHeureDebut
-        ):
-            start_hour = None
-        else:
-            start_hour = Ctime.from_string(
-                time=pan.RegTmpHeureDebut,
-                hour_format="HH:MM:SS"
-            ).as_datetime()
-        if (
-            pd.isna(pan.RegTmpHeureFin) or
-            not pan.RegTmpHeureFin
-        ):
-            end_hour = None
-        else:
-            end_hour = Ctime.from_string(
-                time=pan.RegTmpHeureFin,
-                hour_format="HH:MM:SS"
-            ).as_datetime()
-        if (
-            pd.isna(pan.RegTmpJours) or
-            not pan.RegTmpJours
-        ):
-            days = []
-        else:
-            days = parse_days(pan.RegTmpJours.replace(',', '-'))
-        if (
-            pd.isna(pan.panneau_mois) or
-            not pan.panneau_mois
-        ):
-            months = []
-        else:
-            months = [*map(MONTHS_MAP.get, pan.panneau_mois.split(','))]
-        if (
-            pd.isna(pan.panneau_an_jour_debut) or
-            not pan.panneau_an_jour_debut
-        ):
-            start_day_month = None
-        else:
-            start_day_month = int(pan.panneau_an_jour_debut)
-        if (
-            pd.isna(pan.panneau_an_jour_fin) or
-            not pan.panneau_an_jour_fin
-        ):
-            end_day_month = None
-        else:
-            end_day_month = int(pan.panneau_an_jour_fin)
+        start_hour, end_hour = check_hours(
+            pan.RegTmpHeureDebut,
+            pan.RegTmpHeureFin
+        )
 
-        if months and not (start_day_month or end_day_month):
-            raise ValueError('Months refered without start/end.')
-        if (start_day_month or end_day_month) and not months:
-            raise ValueError('Start/End days refered without start/end.')
+        days = check_days(pan.RegTmpJours)
 
-        months = sorted(months)
-        dates_from, dates_to = from_inventory_to_list_date(
-                start_day_month,
-                end_day_month,
-                months
-            )
-        if not dates_from:
-            dates_from = [None]
-            dates_to = [None]
+        dates_from, dates_to = check_dates(
+            pan.panneau_mois,
+            pan.panneau_an_jour_debut,
+            pan.panneau_an_jour_fin
+        )
+
+        # handle school day
+        if pan.RegTmpEcole and not pd.isna(pan.RegTmpEcole):
+            if dates_from[0] or dates_to[0]:
+                logger.warning('Period specify dates and a school period.')
+            dates_from = [
+                SCHOOL_PERIOD_1['start_date'],
+                SCHOOL_PERIOD_2['start_date']
+            ]
+            dates_to = [
+                SCHOOL_PERIOD_1['end_date'],
+                SCHOOL_PERIOD_2['end_date']
+            ]
+            if days:
+                logger.warning('Period specify days and a school period.')
+            days = SCHOOL_PERIOD_1['days'] if not days else days
+
         periods += list(map(Period,
                             repeat(start_hour),
                             repeat(end_hour),
@@ -256,19 +371,34 @@ class Period():
                 p.extend(reverse_period(**period.to_dict()))
             periods = p
 
-        # school periods
-        if (
-            pan.RegTmpEcole and
-            not pd.isna(pan.RegTmpEcole)
-        ):
-            periods.append(
-                Period(**SCHOOL_PERIOD_1)
-            )
-            periods.append(
-                Period(**SCHOOL_PERIOD_2)
-            )
-
         return periods
+
+    def hour_empty(self) -> bool:
+        """ Hours are empty
+
+        Returns
+        -------
+        bool
+        """
+        return not (self.start_hour and self.end_hour)
+
+    def days_empty(self) -> bool:
+        """ Days are empty
+
+        Returns
+        -------
+        bool
+        """
+        return not self.days
+
+    def dates_empty(self) -> bool:
+        """Dates are empty
+
+        Returns
+        -------
+        bool
+        """
+        return not (self.start_date and self.end_date)
 
     @property
     def empty(self) -> bool:
@@ -278,13 +408,7 @@ class Period():
         -------
         bool
         """
-        return not (
-            self.start_hour or
-            self.end_hour or
-            self.days or
-            self.start_date or
-            self.end_date
-        )
+        return self.hour_empty() and self.dates_empty() and self.days_empty()
 
     def _effective_dates(self):
         if (
@@ -359,76 +483,6 @@ class Period():
         """
         return asdict(self)
 
-    def hour_empty(self):
-        return not (self.start_hour and self.end_hour)
-
-    def days_empty(self):
-        return not self.days
-
-    def dates_empty(self):
-        return not (self.start_date and self.end_date)
-
-    def can_merge(self, other: Period) -> bool:
-        """ Period are compatible or not
-
-        Parameters
-        ----------
-        key : str
-            attribute
-        other : Period
-            other period
-
-        Returns
-        -------
-        bool
-        """
-
-        # FIXME: need a proper check to see if we can merge
-        # brains if fried toonigh
-        return False
-
-        if other.empty or self.empty:
-            return True
-
-        if self == other:
-            return True
-
-        if self.hour_empty():
-            return True
-        # can only merge fully specified period on dates
-        if (
-            self.start_hour and self.end_hour and self.days
-        ):
-            return (
-                self.start_hour == other.start_hour and
-                self.end_hour == other.end_hour and
-                self.days == other.days
-            ) or not (
-                other.start_hour or
-                other.end_hour or
-                other.days
-            )
-
-        # can't merge if hour differ
-        if not (
-            self.start_hour != other.start_hour and
-            self.end_hour != other.end_hour
-        ):
-            return False
-
-        # can't merge if days differs
-        if other.days != self.days:
-            return False
-
-        # we have already check if dates can merge,
-        # only option is is one of them is null
-        return (
-            not (other.start_date and other.end_date) or
-            not (self.start_date and self.end_date)
-        )
-
-        return True
-
     def update(self, other: Period) -> Period:
         """Update a period with information of another period. Information
         should not overlap.
@@ -447,29 +501,24 @@ class Period():
         if self.empty:
             for k, v in ot_dict.items():
                 setattr(self, k, v)
-
-        if self.can_merge(other):
-            self_dict = asdict(self)
-            for k, _ in self_dict.items():
-                if k in ('start_date', 'end_date'):
-                    try:
-                        setattr(
-                            self,
-                            k,
-                            self_dict[k].extend(ot_dict[k])
-                        )
-                    except AttributeError:
-                        setattr(self, k, ot_dict[k])
-                    continue
-                # always replace if there is no conflict
-                if ot_dict[k]:
-                    setattr(self, k, ot_dict[k])
             return [self]
 
-        return [other, self]
+        self_dict = asdict(self)
+        for k, _ in self_dict.items():
+            if self_dict[k] and ot_dict[k]:
+                warn(
+                    f"Little sign {repr(other)} trying to specify the " +
+                    f"existing element {k} of a the period {repr(self)}",
+                    RuntimeWarning
+                )
+                continue
+            # always replace if there is no conflict
+            if ot_dict[k]:
+                setattr(self, k, ot_dict[k])
+        return [self]
 
 
-def period2curblr(periods: list[Period]) -> dict:
+def period2curblr(periods: list[Period]) -> list[dict]:
     """_summary_
 
     Parameters
@@ -482,3 +531,24 @@ def period2curblr(periods: list[Period]) -> dict:
     dict
         _description_
     """
+    curblr = []
+    periods = sorted(periods, key=lambda x: repr(x.days))
+
+    for _, periods_g in groupby(periods, lambda x: repr(x.days)):
+        curbs = [period.to_curblr() for period in periods_g]
+        period_curb = curbs[0]
+        curbs = curbs[1:]
+        for curb in curbs:
+            for k, v in curb.items():
+                if k == 'daysOfWeek':
+                    continue
+                period_curb[k].extend(v)
+                if isinstance(v[0], dict):
+                    period_curb[k] = [dict(s)
+                                      for s in set(frozenset(d.items())
+                                      for d in period_curb[k])]
+                else:
+                    period_curb[k] = list(set(period_curb[k]))
+        curblr.append(period_curb)
+
+    return curblr

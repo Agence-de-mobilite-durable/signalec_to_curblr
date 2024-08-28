@@ -16,16 +16,20 @@ def main():
 
     logger.info('Query data')
     inventaire = gpd.read_file(
-        './data/inventaire/inventaire_lapi_20240808.geojson'
+        './data/inventaire/inventaire_lapi_20240808.geojson',
+        encoding='utf-8'
     )
     support = gpd.read_file(
-        './data/inventaire/rp_support_20240809.geojson'
+        './data/inventaire/rp_support_20240809.geojson',
+        encoding='utf-8'
     )
     panneau = gpd.read_file(
-        './data/inventaire/rp_panneau_20240809.geojson'
+        './data/inventaire/rp_panneau_20240809.geojson',
+        encoding='utf-8'
     )
     period = gpd.read_file(
-        './data/inventaire/rp_panneau_periode_20240809.geojson'
+        './data/inventaire/rp_panneau_periode_20240809.geojson',
+        encoding='utf-8'
     )
     geobase = read_mtl_open_data(
         'https://data.montreal.ca/dataset/' +
@@ -62,9 +66,14 @@ def main():
     panc.enrich_with_roadnetwork(geobase)
     logger.info("Group panels with street and side")
 
+    logger.info("Testing chaining of signs")
+    pb_pans = panc.test_chaining()
+    logger.info("This signs were causing problems : %s", pb_pans)
+
+    logger.info("Creating CurbLR")
     curlr = panc.to_curblr()
     with open('./test_inventaire.curblr.geojson', 'w', encoding='utf-8') as f:
-        json.dump(curlr, f, indent=4)
+        json.dump(curlr, f, indent=4, ensure_ascii=False)
 
     logger.info('Done')
 

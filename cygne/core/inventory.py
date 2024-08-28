@@ -9,7 +9,7 @@ from dataclasses import (
 )
 from itertools import groupby
 import logging
-from tqdm import tqdm
+from warnings import catch_warnings
 
 import pandas as pd
 import geopandas as gpd
@@ -195,6 +195,7 @@ class Inventory():
                     points = list(reversed(points))
                     linear_ref = list(reversed(linear_ref))
                     chain = list(reversed(chain))
+                    panel_id = list(reversed(panel_id))
 
                     linear_ref = [panels[0].location.road_length - lr
                                   for lr in linear_ref]
@@ -308,7 +309,7 @@ class Inventory():
                     location["shstLocationStart"] = lr_break[0]
                     location["shstLocationEnd"] = lr_break[-1]
                     if str(lr_break[-1]) == 'inf':
-                        location["shstLocationEnd"] = line.length
+                        location["shstLocationEnd"] = road_length
 
                     location["derivedFrom"] = pan_id
 
@@ -324,11 +325,74 @@ class Inventory():
 
                     i += 1
 
+        curblr["manifest"]["priorityHierarchy"] = (
+            list({
+                rule['rule']['activity']
+                for feat in curblr['features']
+                for rule in feat['properties']['regulations']
+            }) +
+            list({
+                rule['rule']['priorityCategory']
+                for feat in curblr['features']
+                for rule in feat['properties']['regulations']
+            })
+        )
+
         return curblr
 
-    def test_start(self):
-        """TODO
+    def test_chaining(self) -> list[str]:
+        """ Test if there is some regulation that has several starts or
+        several ends.
+
+        Return
+        ------
+        list[str]
+            Problematic panel id.
         """
+        segments = self._create_segment()
+
+        pb_panels = []
+        for id_street, segments_break in segments.items():
+            for arr in segments_break:
+                panels_id = arr[2]
+                chain = [self.pans[p_id].arrow for p_id in panels_id]
+
+                state = -1
+                for i, c in enumerate(chain):
+                    if state == -1:
+                        if c in [1, 2]:
+                            state = 1   # open
+                        else:
+                            state = 0   # close
+                    if state == 1:
+                        if c == 1:
+                            logger.warning(
+                                'One panel was already open without being' +
+                                ' closed on street: %s, for regulation: %s' +
+                                ' and panel: %s',
+                                id_street,
+                                arr[0][0],
+                                panels_id[i]
+                            )
+                            pb_panels.append(panels_id[i])
+                        if c == 3:
+                            state = 0
+                    if state == 0:
+                        if c == 3:
+                            logger.warning(
+                                "regulation was closed already. No opening" +
+                                " for this regulation before closing it. On" +
+                                " street: %s for regulation: %s and" +
+                                " panel: %s.",
+                                id_street,
+                                arr[0][0],
+                                panels_id[i]
+                            )
+                            pb_panels.append(panels_id[i])
+                        if c in [1, 2]:
+                            state = 1
+
+        return pb_panels
 
     @classmethod
     def from_inventory(cls, data: pd.DataFrame):
@@ -343,15 +407,28 @@ class Inventory():
         """
 
         pans_store = {}
-        for _, poteau in tqdm(data.groupby(['globalid'])):
+
+        # iter over poteau
+        for _, poteau in data.groupby(['globalid']):
             little_pans = poteau[poteau.ObjetType == 'panonceau'].copy()
             pans = poteau[poteau.ObjetType != 'panonceau'].copy()
 
             if not little_pans.empty:
                 little_pans = little_pans.set_index(['IdObjetRefExt'])
 
+            # iter over signs
             for pan in pans.itertuples():
-                pan_object = Panel.from_inventory(pan)
+                logger.debug('Panel %s being proccessed', pan.globalid_panneau)
+                try:
+                    pan_object = Panel.from_inventory(pan)
+                except ValueError as ve:
+                    logger.warning(
+                        "Panel %s is not formed as expected, please check." +
+                        " Not processed",
+                        pan.globalid_panneau
+                    )
+                    logger.error(ve)
+                    continue
 
                 # handle little pans
                 try:
@@ -365,7 +442,17 @@ class Inventory():
                     # apply each regulations of each little pan on this panel
                     for little_pan_o in little_pans_o:
                         for reg in little_pan_o.regulation:
-                            pan_object.extend_regulation(reg)
+                            with catch_warnings(record=True) as ws:
+                                pan_object.extend_regulation(reg)
+                                if ws:
+                                    logger.warning(
+                                        "Sign %s and little sign %s have " +
+                                        "overlapping elements",
+                                        pan_object.unique_id,
+                                        little_pan_o.unique_id
+                                    )
+                                    for w in ws:
+                                        logger.warning(w.message.args[0])
 
                 try:
                     pans_store[pan.globalid_panneau].append(pan_object)
