@@ -38,6 +38,7 @@ def process_fire_hydrants(
     if not limits.empty:
         limit_cols = list(limits.columns)
         limit_cols.remove('geometry')
+        limits = limits.to_crs(data.crs)
         data = gpd.sjoin(
             data,
             limits,
