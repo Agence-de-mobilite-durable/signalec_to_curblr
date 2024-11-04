@@ -348,6 +348,7 @@ def point_to_line(
     )
 
     match_field.insert(0, roads_id_col)
+    match_field.insert(1, side_of_street_field)
     groups = data.groupby(match_field)
 
     lines_df = []
