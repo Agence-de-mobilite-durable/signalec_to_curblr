@@ -56,7 +56,7 @@ def main():
         how='left'
     )
 
-    # FIX SRRR
+    # FIX SRRR student's incorrect coding.
     df.loc[~df.RegVehSRRR.isna() &
            (df.RegVehSRRR != ''), 'RegVehExcept'] = 'oui'
 
