@@ -95,6 +95,7 @@ def transform_signalec(
     if not limit.empty:
         limit_columns = list(limit.columns)
         limit_columns.remove('geometry')
+        limit = limit.to_crs(sig_sta.crs)
         sig_sta = gpd.sjoin(
             sig_sta,
             limit,
@@ -116,8 +117,7 @@ def transform_signalec(
     filter_ = (
         ~sig_sta.DESCRIPTION_RPA.str.startswith('PANONCEAU') &
         ((sig_sta.DESCRIPTION_REP == 'Réel') |
-         (sig_sta.DESCRIPTION_REP == 'En conception')) &
-        (sig_sta.CODE_RPA == 'R-TA')
+         (sig_sta.DESCRIPTION_REP == 'En conception'))
     )
 
     geobase = geobase.reset_index(drop=True)
