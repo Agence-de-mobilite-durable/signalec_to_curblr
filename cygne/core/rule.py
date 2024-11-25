@@ -178,9 +178,8 @@ class Rule():
             ) and
             self.type == other.type and
             self.reason == other.reason and
-            self.priority == other.priority and
             self.max_stay == other.max_stay
         )
 
     def __hash__(self) -> int:
-        return hash((self.activity, self.type, self.priority, self.max_stay))
+        return hash((self.activity, self.type, self.max_stay))
